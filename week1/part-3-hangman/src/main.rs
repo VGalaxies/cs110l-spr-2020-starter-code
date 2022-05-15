@@ -34,7 +34,56 @@ fn main() {
     // secret_word by doing secret_word_chars[i].
     let secret_word_chars: Vec<char> = secret_word.chars().collect();
     // Uncomment for debugging:
-    // println!("random word: {}", secret_word);
+    println!("random word: {}", secret_word);
 
     // Your code here! :)
+    println!("Welcome to CS110L Hangman!");
+    let mut guesses: Vec<char> = Vec::new();
+    let mut counter = 5;
+    let mut display: Vec<char> = Vec::new();
+    for _ in secret_word_chars.iter() {
+        display.push('-')
+    }
+
+    loop {
+        println!();
+        println!("The word so far is {}", display.iter().fold(String::new(), |acc, &char| acc + &*char.to_string()));
+        println!("You have guessed the following letters: {}", guesses.iter().fold(String::new(), |acc, &char| acc + &*char.to_string()));
+        println!("You have {} guesses left", counter);
+        print!("Please guess a letter: ");
+
+        io::stdout()
+            .flush()
+            .expect("Error flushing stdout.");
+        let mut guess = String::new();
+        io::stdin()
+            .read_line(&mut guess)
+            .expect("Error reading line.");
+
+        assert!(guess.len() >= 1);
+        let guess_chars: Vec<char> = guess.chars().collect();
+        if secret_word_chars.contains(&guess_chars[0]) {
+            if !guesses.contains(&guess_chars[0]) {
+                guesses.push(guess_chars[0]);
+                for i in 0..secret_word_chars.len() {
+                    if guess_chars[0] == secret_word_chars[i] {
+                        display[i] = guess_chars[0];
+                    }
+                }
+                if !display.contains(&'-') {
+                    println!("Congratulations you guessed the secret word: {}!", secret_word);
+                    break;
+                }
+            } else {
+                println!("Duplicated input.");
+            }
+        } else {
+            counter -= 1;
+            println!("Sorry, that letter is not in the word");
+            if counter == 0 {
+                println!("Sorry, you ran out of guesses!");
+                break;
+            }
+        }
+    }
 }
