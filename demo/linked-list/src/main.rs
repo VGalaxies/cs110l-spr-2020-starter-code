@@ -86,14 +86,16 @@ impl Drop for LinkedList {
 }
 
 fn main() {
-    let mut list = LinkedList::new();
-    println!("{}", list.get_size());
-    list.push(1);
-    list.push(2);
-    list.display();
+    let mut list: LinkedList = LinkedList::new();
+    assert!(list.is_empty());
+    assert_eq!(list.get_size(), 0);
+    for i in 1..10 {
+        list.push(i);
+    }
     println!("{}", list);
-    println!("{}", list.get_size());
-    println!("{}", list.pop().unwrap());
-    println!("{}", list.pop().unwrap());
-    println!("{}", list.pop().unwrap_or(0));
+    println!("list size: {}", list.get_size());
+    println!("top element: {}", list.pop().unwrap());
+    println!("{}", list);
+    println!("size: {}", list.get_size());
+    println!("{}", list.to_string()) // ToString impl for anything impl Display
 }
