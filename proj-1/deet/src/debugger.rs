@@ -1,5 +1,5 @@
 use crate::debugger_command::DebuggerCommand;
-use crate::inferior::Inferior;
+use crate::inferior::{Inferior, Status};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
@@ -28,23 +28,98 @@ impl Debugger {
         }
     }
 
+    fn kill_inferior(&mut self) {
+        let inferior = self.inferior.as_mut().unwrap();
+        match inferior.kill() {
+            Some(status) => match status {
+                Status::Stopped(signal, rip) => {
+                    println!("Child stopped by {} at 0x{:016x}", signal, rip)
+                }
+                Status::Exited(exit_code) => {
+                    self.inferior = None;
+                    println!("Child exited (status {})", exit_code)
+                }
+                Status::Signaled(signal) => {
+                    self.inferior = None;
+                    println!("Child exited by {}", signal)
+                }
+            },
+            None => {
+                println!("Error killing subprocess");
+            }
+        }
+    }
+
+    fn cont_inferior(&mut self) {
+        let inferior = self.inferior.as_ref().unwrap();
+        match inferior.cont() {
+            Ok(status) => match status {
+                Status::Stopped(signal, rip) => {
+                    println!("Child stopped by {} at 0x{:016x}", signal, rip)
+                }
+                Status::Exited(exit_code) => {
+                    self.inferior = None;
+                    println!("Child exited (status {})", exit_code)
+                }
+                Status::Signaled(signal) => {
+                    self.inferior = None;
+                    println!("Child exited by {}", signal)
+                }
+            },
+            Err(err) => {
+                println!("{}", err);
+            }
+        }
+    }
+
+    fn create_new_inferior(&mut self, args: &Vec<String>) {
+        if let Some(inferior) = Inferior::new(&self.target, &args) {
+            // Create the inferior
+            self.inferior = Some(inferior);
+            // You may use self.inferior.as_mut().unwrap() to get a mutable reference
+            // to the Inferior object
+            self.cont_inferior();
+        } else {
+            println!("Error starting subprocess");
+        }
+    }
+
+    // TODO (milestone 1): make the inferior run
     pub fn run(&mut self) {
         loop {
             match self.get_next_command() {
-                DebuggerCommand::Run(args) => {
-                    if let Some(inferior) = Inferior::new(&self.target, &args) {
-                        // Create the inferior
-                        self.inferior = Some(inferior);
-                        // TODO (milestone 1): make the inferior run
-                        // You may use self.inferior.as_mut().unwrap() to get a mutable reference
-                        // to the Inferior object
-                    } else {
-                        println!("Error starting subprocess");
+                DebuggerCommand::Run(args) => match &mut self.inferior {
+                    Some(inferior) => {
+                        println!(
+                            "Killing the running inferior (pid {}) before running new inferior",
+                            inferior.pid()
+                        );
+                        self.kill_inferior();
+                        self.create_new_inferior(&args);
                     }
-                }
-                DebuggerCommand::Quit => {
-                    return;
-                }
+                    None => {
+                        self.create_new_inferior(&args);
+                    }
+                },
+                DebuggerCommand::Continue => match &mut self.inferior {
+                    Some(_) => self.cont_inferior(),
+                    None => {
+                        println!("The program is not being run");
+                    }
+                },
+                DebuggerCommand::Quit => match &mut self.inferior {
+                    Some(inferior) => {
+                        println!(
+                            "Killing the running inferior (pid {}) before quitting",
+                            inferior.pid()
+                        );
+                        self.kill_inferior();
+                        return;
+                    }
+                    None => {
+                        return;
+                    }
+                },
             }
         }
     }
