@@ -162,7 +162,31 @@ impl Debugger {
                 },
                 DebuggerCommand::Break(breakpoint) => {
                     if !breakpoint.starts_with("*") {
-                        println!("Breakpoint should start with *")
+                        let line_wrap = usize::from_str_radix(&breakpoint, 10);
+                        if line_wrap.is_ok() {
+                            let line = line_wrap.unwrap();
+                            match self.debug_data.get_addr_for_line(None, line) {
+                                Some(addr) => {
+                                    let index = self.breakpoints.len();
+                                    self.breakpoints.push(addr);
+                                    println!("Set breakpoint {} at {:#x} (line {})", index, addr, line);
+                                }
+                                None => {
+                                    println!("Invalid line breakpoint");
+                                }
+                            }
+                        } else {
+                            match self.debug_data.get_addr_for_function(None, &breakpoint) {
+                                Some(addr) => {
+                                    let index = self.breakpoints.len();
+                                    self.breakpoints.push(addr);
+                                    println!("Set breakpoint {} at {:#x} (function {})", index, addr, &breakpoint);
+                                }
+                                None => {
+                                    println!("Invalid function breakpoint");
+                                }
+                            }
+                        }
                     } else {
                         match Debugger::parse_address(&breakpoint[1..]) {
                             Some(addr) => {
@@ -170,7 +194,7 @@ impl Debugger {
                                 self.breakpoints.push(addr);
                                 println!("Set breakpoint {} at {:#x}", index, addr);
                             }
-                            None => println!("Invalid breakpoint"),
+                            None => println!("Invalid address breakpoint"),
                         }
                     }
                 }

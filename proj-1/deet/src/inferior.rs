@@ -23,13 +23,7 @@ pub enum Status {
 
 pub struct Inferior {
     child: Child,
-    breakpoints_mapping: HashMap<usize, Breakpoint>,
-}
-
-#[derive(Clone)]
-struct Breakpoint {
-    addr: usize,
-    orig_byte: u8,
+    breakpoints_mapping: HashMap<usize, u8>,
 }
 
 /// This function calls ptrace with PTRACE_TRACEME to enable debugging on a process. You should use
@@ -59,7 +53,7 @@ impl Inferior {
                 .ok()?;
         }
 
-        let breakpoints_mapping: HashMap<usize, Breakpoint> = Default::default();
+        let breakpoints_mapping: HashMap<usize, u8> = Default::default();
         let mut inferior = Inferior {
             child,
             breakpoints_mapping,
@@ -73,10 +67,7 @@ impl Inferior {
                         Ok(orig_byte) => {
                             inferior.breakpoints_mapping.insert(
                                 *addr,
-                                Breakpoint {
-                                    addr: *addr,
-                                    orig_byte,
-                                },
+                                orig_byte,
                             );
                         }
                         Err(_) => return None,
@@ -150,10 +141,7 @@ impl Inferior {
                 Ok(orig_byte) => {
                     self.breakpoints_mapping.insert(
                         *addr,
-                        Breakpoint {
-                            addr: *addr,
-                            orig_byte,
-                        },
+                        orig_byte,
                     );
                 }
                 Err(err) => return Err(err),
@@ -164,9 +152,9 @@ impl Inferior {
         let rip: usize = regs.rip as usize;
         let target_rip = rip - 1;
 
-        let breakpoint = self.breakpoints_mapping.get(&target_rip);
-        if breakpoint.is_some() {
-            let orig_byte = breakpoint.unwrap().orig_byte;
+        let orig_byte_wrap = self.breakpoints_mapping.get(&target_rip);
+        if orig_byte_wrap.is_some() {
+            let orig_byte = orig_byte_wrap.unwrap().clone();
             match self.write_byte(target_rip, orig_byte) {
                 Ok(byte) => {
                     assert_eq!(byte, 0xcc);
