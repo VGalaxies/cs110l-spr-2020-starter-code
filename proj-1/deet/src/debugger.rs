@@ -1,4 +1,5 @@
 use crate::debugger_command::DebuggerCommand;
+use crate::dwarf_data::{DwarfData, Error as DwarfError};
 use crate::inferior::{Inferior, Status};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -8,12 +9,27 @@ pub struct Debugger {
     history_path: String,
     readline: Editor<()>,
     inferior: Option<Inferior>,
+    debug_data: DwarfData,
+    breakpoints: Vec<usize>,
 }
 
 impl Debugger {
     /// Initializes the debugger.
     pub fn new(target: &str) -> Debugger {
         // TODO (milestone 3): initialize the DwarfData
+        let debug_data = match DwarfData::from_file(target) {
+            Ok(val) => val,
+            Err(DwarfError::ErrorOpeningFile) => {
+                println!("Could not open file {}", target);
+                std::process::exit(1);
+            }
+            Err(DwarfError::DwarfFormatError(err)) => {
+                println!("Could not debugging symbols from {}: {:?}", target, err);
+                std::process::exit(1);
+            }
+        };
+
+        debug_data.print();
 
         let history_path = format!("{}/.deet_history", std::env::var("HOME").unwrap());
         let mut readline = Editor::<()>::new();
@@ -25,25 +41,43 @@ impl Debugger {
             history_path,
             readline,
             inferior: None,
+            debug_data,
+            breakpoints: vec![],
+        }
+    }
+
+    fn handle_status(&mut self, status: Status) {
+        match status {
+            Status::Stopped(signal, rip) => {
+                let line = self.debug_data.get_line_from_addr(rip);
+                let func = self.debug_data.get_function_from_addr(rip);
+
+                if line.is_some() && func.is_some() {
+                    let line_unwrap = line.unwrap();
+                    let func_unwrap = func.unwrap();
+                    println!(
+                        "Child stopped by {} at {} ({}:{})",
+                        signal, func_unwrap, line_unwrap.file, line_unwrap.number
+                    );
+                } else {
+                    println!("Child stopped by {} at {:#x}", signal, rip);
+                }
+            }
+            Status::Exited(exit_code) => {
+                self.inferior = None;
+                println!("Child exited (status {})", exit_code)
+            }
+            Status::Signaled(signal) => {
+                self.inferior = None;
+                println!("Child exited by {}", signal)
+            }
         }
     }
 
     fn kill_inferior(&mut self) {
         let inferior = self.inferior.as_mut().unwrap();
         match inferior.kill() {
-            Some(status) => match status {
-                Status::Stopped(signal, rip) => {
-                    println!("Child stopped by {} at 0x{:016x}", signal, rip)
-                }
-                Status::Exited(exit_code) => {
-                    self.inferior = None;
-                    println!("Child exited (status {})", exit_code)
-                }
-                Status::Signaled(signal) => {
-                    self.inferior = None;
-                    println!("Child exited by {}", signal)
-                }
-            },
+            Some(status) => self.handle_status(status),
             None => {
                 println!("Error killing subprocess");
             }
@@ -51,21 +85,9 @@ impl Debugger {
     }
 
     fn cont_inferior(&mut self) {
-        let inferior = self.inferior.as_ref().unwrap();
-        match inferior.cont() {
-            Ok(status) => match status {
-                Status::Stopped(signal, rip) => {
-                    println!("Child stopped by {} at 0x{:016x}", signal, rip)
-                }
-                Status::Exited(exit_code) => {
-                    self.inferior = None;
-                    println!("Child exited (status {})", exit_code)
-                }
-                Status::Signaled(signal) => {
-                    self.inferior = None;
-                    println!("Child exited by {}", signal)
-                }
-            },
+        let inferior = self.inferior.as_mut().unwrap();
+        match inferior.cont(&self.breakpoints) {
+            Ok(status) => self.handle_status(status),
             Err(err) => {
                 println!("{}", err);
             }
@@ -73,7 +95,7 @@ impl Debugger {
     }
 
     fn create_new_inferior(&mut self, args: &Vec<String>) {
-        if let Some(inferior) = Inferior::new(&self.target, &args) {
+        if let Some(inferior) = Inferior::new(&self.target, &args, &self.breakpoints) {
             // Create the inferior
             self.inferior = Some(inferior);
             // You may use self.inferior.as_mut().unwrap() to get a mutable reference
@@ -82,6 +104,15 @@ impl Debugger {
         } else {
             println!("Error starting subprocess");
         }
+    }
+
+    fn parse_address(addr: &str) -> Option<usize> {
+        let addr_without_0x = if addr.to_lowercase().starts_with("0x") {
+            &addr[2..]
+        } else {
+            &addr
+        };
+        usize::from_str_radix(addr_without_0x, 16).ok()
     }
 
     // TODO (milestone 1): make the inferior run
@@ -120,6 +151,29 @@ impl Debugger {
                         return;
                     }
                 },
+                DebuggerCommand::Backtrace => match &self.inferior {
+                    Some(inferior) => match inferior.print_backtrace(&self.debug_data) {
+                        Ok(_) => {}
+                        Err(err) => println!("{}", err),
+                    },
+                    None => {
+                        println!("The program is not being run");
+                    }
+                },
+                DebuggerCommand::Break(breakpoint) => {
+                    if !breakpoint.starts_with("*") {
+                        println!("Breakpoint should start with *")
+                    } else {
+                        match Debugger::parse_address(&breakpoint[1..]) {
+                            Some(addr) => {
+                                let index = self.breakpoints.len();
+                                self.breakpoints.push(addr);
+                                println!("Set breakpoint {} at {:#x}", index, addr);
+                            }
+                            None => println!("Invalid breakpoint"),
+                        }
+                    }
+                }
             }
         }
     }
