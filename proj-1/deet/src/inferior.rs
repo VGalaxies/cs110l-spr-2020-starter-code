@@ -65,10 +65,7 @@ impl Inferior {
                 for addr in breakpoints {
                     match inferior.write_byte(*addr, 0xcc) {
                         Ok(orig_byte) => {
-                            inferior.breakpoints_mapping.insert(
-                                *addr,
-                                orig_byte,
-                            );
+                            inferior.breakpoints_mapping.insert(*addr, orig_byte);
                         }
                         Err(_) => return None,
                     }
@@ -125,13 +122,10 @@ impl Inferior {
         Ok(())
     }
 
-    // why use Option
-    // kill err -> std::io::error
-    // wait err -> nix::Error
-    pub fn kill(&mut self) -> Option<Status> {
-        return match self.child.kill() {
-            Ok(_) => Some(self.wait(None).ok()?), // reap the killed process
-            Err(_) => None,
+    pub fn kill(&mut self) -> Result<Status, nix::Error> {
+        return match ptrace::kill(self.pid()) {
+            Ok(_) => self.wait(None), // reap the killed process
+            Err(err) => Err(err),
         };
     }
 
@@ -139,10 +133,7 @@ impl Inferior {
         for addr in breakpoints {
             match self.write_byte(*addr, 0xcc) {
                 Ok(orig_byte) => {
-                    self.breakpoints_mapping.insert(
-                        *addr,
-                        orig_byte,
-                    );
+                    self.breakpoints_mapping.insert(*addr, orig_byte);
                 }
                 Err(err) => return Err(err),
             }

@@ -77,9 +77,9 @@ impl Debugger {
     fn kill_inferior(&mut self) {
         let inferior = self.inferior.as_mut().unwrap();
         match inferior.kill() {
-            Some(status) => self.handle_status(status),
-            None => {
-                println!("Error killing subprocess");
+            Ok(status) => self.handle_status(status),
+            Err(err) => {
+                println!("Error killing subprocess -> {}", err);
             }
         }
     }
@@ -89,7 +89,7 @@ impl Debugger {
         match inferior.cont(&self.breakpoints) {
             Ok(status) => self.handle_status(status),
             Err(err) => {
-                println!("{}", err);
+                println!("Error continuing subprocess -> {}", err);
             }
         }
     }
